@@ -121,7 +121,7 @@ function CuentaForm({ cuenta, onClose }: { cuenta: Partial<Cuenta> | null; onClo
         </Select>
       </Field>
       <Field label="Nombre"><Input value={f.nombre ?? ''} onChange={(e) => set('nombre', e.target.value)} placeholder={credito ? 'Ej. Nu, BBVA Azul' : 'Ej. BBVA Nómina, Cartera'} /></Field>
-      <Field label={credito ? 'Deuda actual (lo que debes hoy)' : 'Saldo actual'} hint={editando ? 'Si lo cambias, se ajusta el saldo sin tocar tus movimientos.' : credito ? 'Incluye compras a MSI pendientes. Pon 0 si no debes nada.' : undefined}>
+      <Field label={credito ? 'Deuda actual (lo que debes hoy)' : 'Saldo actual'} hint={editando ? 'Si lo cambias, se ajusta el saldo sin tocar tus movimientos.' : credito ? 'Tu deuda total como aparece en la app del banco, con todo y MSI. Después, en Tarjetas → “MSI que ya traes”, separas tus compras a meses.' : undefined}>
         <Input inputMode="decimal" value={saldo} onChange={(e) => setSaldo(e.target.value)} placeholder="0.00" />
       </Field>
       {credito && (

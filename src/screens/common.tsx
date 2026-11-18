@@ -20,6 +20,7 @@ export function MovRow({ m, onClick }: { m: Movimiento; onClick?: () => void }) 
     m.msi_meses ? `${m.msi_meses} MSI` : null,
     m.compartido_id ? 'Compartido' : null,
     m.prestamo_id ? 'Préstamo' : null,
+    m.es_saldo_inicial ? 'MSI previo' : null,
   ].filter(Boolean).join(' · ')
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 rounded-2xl px-2 py-2.5 text-left transition hover:bg-slate-50 active:bg-slate-100 dark:hover:bg-slate-800/60">

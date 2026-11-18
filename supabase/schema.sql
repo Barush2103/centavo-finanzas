@@ -375,3 +375,8 @@ alter table public.centavo_prestamos
 -- Tarjetas: parte de la deuda inicial que pertenece al último estado de cuenta (el resto se factura en el siguiente corte)
 alter table public.centavo_cuentas
   add column if not exists pendiente_inicial numeric(14,2) not null default 0 check (pendiente_inicial >= 0);
+
+-- MSI que ya venían en la tarjeta al registrarla: mueven la deuda pero no son gasto del mes
+alter table public.centavo_movimientos add column if not exists es_saldo_inicial boolean not null default false;
+-- msi_meses ahora acepta 1 (última mensualidad pendiente)
+-- alter table public.centavo_movimientos add constraint centavo_movimientos_msi_meses_check check (msi_meses is null or msi_meses between 1 and 48);

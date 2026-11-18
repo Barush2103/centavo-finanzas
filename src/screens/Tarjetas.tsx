@@ -1,15 +1,18 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { CalendarClock, Plus } from 'lucide-react'
 import { useApp } from '../appctx'
 import { useMisCuentas, useMisMovs } from '../data'
 import { estadoTarjeta } from '../lib/calc'
 import { diasHasta, fechaCorta, money, sum } from '../lib/fmt'
 import { Bar, Btn, Card, cx, Empty, PageTitle } from '../ui'
+import MsiPrevios from './MsiPrevios'
+import type { Cuenta } from '../lib/types'
 
 export default function Tarjetas() {
   const { nuevo, go } = useApp()
   const cuentas = useMisCuentas()
   const movs = useMisMovs()
+  const [msiDe, setMsiDe] = useState<Cuenta | null>(null)
   const debito = cuentas.find((c) => c.tipo === 'debito') ?? cuentas.find((c) => c.tipo !== 'credito')
 
   const tarjetas = useMemo(() => cuentas.filter((c) => c.tipo === 'credito').map((c) => ({ c, e: estadoTarjeta(c, movs) }))
@@ -33,7 +36,7 @@ export default function Tarjetas() {
       <PageTitle title="Tarjetas de crédito" />
       <Card className="mb-4">
         <div className="grid grid-cols-3 gap-2">
-          <div><p className="text-xs text-slate-500">A pagar este ciclo</p><p className="tabular text-lg font-bold text-rose-600">{money(totalPagar)}</p></div>
+          <div><p className="text-xs text-slate-500">A pagar este ciclo</p><p className={cx('tabular text-lg font-bold', totalPagar > 0 ? 'text-rose-600' : 'text-emerald-600')}>{money(totalPagar)}</p></div>
           <div><p className="text-xs text-slate-500">Deuda total</p><p className="tabular text-lg font-bold">{money(totalDeuda)}</p></div>
           <div><p className="text-xs text-slate-500">MSI por venir</p><p className="tabular text-lg font-bold">{money(totalMsi)}</p></div>
         </div>
@@ -93,18 +96,32 @@ export default function Tarjetas() {
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Meses sin intereses</p>
                     <div className="space-y-2">
-                      {e.msi.map((x) => (
+                      {e.msi.map((x) => {
+                        const tot = Number((x.mov.nota ?? '').match(/\((\d+) meses\)$/)?.[1] ?? 0)
+                        const de = x.mov.es_saldo_inicial && tot >= x.mov.msi_meses! ? tot : x.mov.msi_meses!
+                        const van = de - x.mov.msi_meses! + x.facturadas
+                        const nombre = (x.mov.nota || 'Compra').replace(/ \(\d+ meses\)$/, '')
+                        return (
                         <div key={x.mov.id}>
-                          <div className="flex justify-between text-sm">
-                            <span className="truncate">{x.mov.nota || 'Compra'} · {x.facturadas}/{x.mov.msi_meses}</span>
-                            <span className="tabular shrink-0 text-slate-500">{money(x.mensualidad)}/mes · resta {money(x.restante)}</span>
+                          <div className="flex items-baseline justify-between gap-2 text-sm">
+                            <span className="min-w-0 truncate font-medium">{nombre}</span>
+                            <span className="tabular shrink-0 text-xs text-slate-500">{van} de {de}</span>
                           </div>
-                          <Bar value={x.facturadas / x.mov.msi_meses!} tone="sky" />
+                          <div className="flex justify-between text-xs text-slate-500">
+                            <span className="tabular">{money(x.mensualidad)} al mes</span>
+                            <span className="tabular">faltan {money(x.restante)}</span>
+                          </div>
+                          <Bar value={van / de} tone="sky" />
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 )}
+
+                <button onClick={() => setMsiDe(c)} className="w-full rounded-2xl border border-dashed border-sky-300 py-2.5 text-sm font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/40">
+                  + MSI que ya traes {e.msi.length ? `(${e.msi.length} registrados)` : ''}
+                </button>
 
                 <div className="flex gap-2 pt-1">
                   <Btn className="flex-1" onClick={() => nuevo({ tipo: 'transferencia', cuenta_id: debito?.id, cuenta_destino_id: c.id, monto: e.pagoNoIntereses || undefined })}>Registrar pago</Btn>
@@ -115,6 +132,7 @@ export default function Tarjetas() {
           )
         })}
       </div>
+      <MsiPrevios cuenta={msiDe} onClose={() => setMsiDe(null)} />
       <p className="mt-4 text-xs text-slate-500">El cálculo usa tus movimientos registrados: saldo al corte (con solo la mensualidad de cada compra a MSI) menos lo que has pagado después del corte. No incluye intereses ni comisiones del banco; compáralo con tu estado de cuenta.</p>
     </div>
   )

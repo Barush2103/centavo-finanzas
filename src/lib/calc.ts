@@ -17,7 +17,7 @@ export function saldoCuenta(c: Cuenta, movs: Movimiento[]): number {
 }
 
 /** Los movimientos ligados a préstamos mueven saldos pero no cuentan como gasto/ingreso */
-export const cuentaEnStats = (m: Movimiento) => !m.prestamo_id
+export const cuentaEnStats = (m: Movimiento) => !m.prestamo_id && !m.es_saldo_inicial
 
 // ---------------- Tarjetas de crédito ----------------
 const dim = (y: number, m: number) => new Date(y, m + 1, 0).getDate()

@@ -41,7 +41,7 @@ export default function QuickGasto({ open, onClose, onAvanzado }: { open: boolea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const gastosMios = useMemo(() => movs.filter((m) => m.tipo === 'gasto' && !m.prestamo_id), [movs])
+  const gastosMios = useMemo(() => movs.filter((m) => m.tipo === 'gasto' && !m.prestamo_id && !m.es_saldo_inicial), [movs])
 
   const catsGasto = useMemo(() => {
     const uso = new Map<string, number>()
