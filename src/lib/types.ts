@@ -32,6 +32,8 @@ export interface Prestamo {
   tipo: 'personal' | 'credito'; monto: number; tasa_anual: number
   plazo: number | null; frecuencia: Frecuencia; fecha_inicio: string
   nota: string | null; cerrado: boolean; created_at: string
+  pago_fijo: number | null; iva_interes: boolean; base_dias: 'periodo' | '360' | '365'
+  saldo_inicial: number | null; pagos_previos: number
 }
 
 export interface Abono {

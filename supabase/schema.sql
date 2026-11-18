@@ -363,3 +363,11 @@ create policy centavo_partes_upd on public.centavo_compartidos_partes for update
 -- Usuarios que ya existían en el proyecto
 select public.centavo_sembrar(u.id, u.email, u.raw_user_meta_data->>'nombre')
 from auth.users u where u.email is not null and not exists (select 1 from public.centavo_perfiles p where p.id = u.id);
+
+-- Cálculo bancario de préstamos (IVA sobre intereses, interés por días, pagos previos)
+alter table public.centavo_prestamos
+  add column if not exists pago_fijo numeric(14,2) check (pago_fijo is null or pago_fijo > 0),
+  add column if not exists iva_interes boolean not null default false,
+  add column if not exists base_dias text not null default 'periodo' check (base_dias in ('periodo','360','365')),
+  add column if not exists saldo_inicial numeric(14,2) check (saldo_inicial is null or saldo_inicial >= 0),
+  add column if not exists pagos_previos int not null default 0 check (pagos_previos >= 0);

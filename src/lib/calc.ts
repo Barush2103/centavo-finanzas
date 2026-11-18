@@ -117,66 +117,124 @@ export function estadoTarjeta(c: Cuenta, movs: Movimiento[]): EstadoTarjeta {
 }
 
 // ---------------- Préstamos ----------------
+// Modelo bancario mexicano: interés = saldo × tasa ÷ base × días del periodo (o tasa ÷ periodos),
+// IVA 16% sobre el interés, pago fijo; capital = pago − interés − IVA.
 export const periodosAnio: Record<Frecuencia, number> = { semanal: 52, quincenal: 24, mensual: 12 }
+export const IVA = 0.16
 
-export function tasaPeriodo(p: Pick<Prestamo, 'tasa_anual' | 'frecuencia'>) {
-  return Number(p.tasa_anual) / 100 / periodosAnio[p.frecuencia]
-}
-
-export function pagoFijo(p: Pick<Prestamo, 'monto' | 'tasa_anual' | 'frecuencia' | 'plazo'>): number | null {
-  if (!p.plazo) return null
-  const P = Number(p.monto), i = tasaPeriodo(p), n = p.plazo
-  if (i === 0) return r2(P / n)
-  return r2((P * i) / (1 - Math.pow(1 + i, -n)))
-}
+type PrestamoCalc = Pick<Prestamo, 'monto' | 'tasa_anual' | 'frecuencia' | 'plazo' | 'fecha_inicio'> &
+  Partial<Pick<Prestamo, 'pago_fijo' | 'iva_interes' | 'base_dias' | 'saldo_inicial' | 'pagos_previos'>>
 
 export function sumarPeriodos(fecha: string, f: Frecuencia, k: number): string {
   const d = parseISO(fecha)
   if (f === 'semanal') d.setDate(d.getDate() + 7 * k)
-  else if (f === 'mensual') d.setMonth(d.getMonth() + k)
-  else { d.setMonth(d.getMonth() + Math.floor(k / 2)); if (k % 2) d.setDate(d.getDate() + 15) }
+  else if (f === 'mensual') {
+    const dia = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + k)
+    d.setDate(Math.min(dia, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()))
+  } else { d.setMonth(d.getMonth() + Math.floor(k / 2)); if (k % 2) d.setDate(d.getDate() + 15) }
   return iso(d)
 }
 
-export interface FilaAmort { n: number; fecha: string; pago: number; interes: number; capital: number; saldo: number }
+/** Saldo con el que arranca el cálculo y cuántos pagos faltan */
+export function base(p: PrestamoCalc) {
+  const previos = p.pagos_previos ?? 0
+  const saldo = p.saldo_inicial != null && previos > 0 ? Number(p.saldo_inicial) : Number(p.monto)
+  const restantes = p.plazo ? Math.max(1, p.plazo - (previos > 0 ? previos : 0)) : null
+  return { saldo, previos: previos > 0 ? previos : 0, restantes }
+}
 
-export function tablaAmortizacion(p: Prestamo): FilaAmort[] {
-  const pago = pagoFijo(p)
-  if (!pago || !p.plazo) return []
+/** Interés (sin IVA) de un periodo que va de fechaA a fechaB */
+function interesPeriodo(p: PrestamoCalc, saldo: number, fechaA: string, fechaB: string) {
+  const tasa = Number(p.tasa_anual) / 100
+  if (!tasa) return 0
+  if (p.base_dias === '360' || p.base_dias === '365') {
+    const dias = Math.round((parseISO(fechaB).getTime() - parseISO(fechaA).getTime()) / 864e5)
+    return r2((saldo * tasa * dias) / Number(p.base_dias))
+  }
+  return r2(saldo * (tasa / periodosAnio[p.frecuencia]))
+}
+
+export function tasaPeriodo(p: PrestamoCalc) {
+  const tasa = Number(p.tasa_anual) / 100
+  const i = p.base_dias === '360' || p.base_dias === '365' ? (tasa * (365 / periodosAnio[p.frecuencia])) / Number(p.base_dias) : tasa / periodosAnio[p.frecuencia]
+  return i * (p.iva_interes ? 1 + IVA : 1)
+}
+
+/** Pago calculado (sin usar el que puso el usuario) */
+export function pagoCalculado(p: PrestamoCalc): number | null {
+  const { saldo, restantes } = base(p)
+  if (!restantes) return null
   const i = tasaPeriodo(p)
-  let saldo = Number(p.monto)
+  if (i === 0) return r2(saldo / restantes)
+  return r2((saldo * i) / (1 - Math.pow(1 + i, -restantes)))
+}
+
+/** Pago periódico: el que dio el banco si lo capturaste, si no el calculado */
+export function pagoFijo(p: PrestamoCalc): number | null {
+  if (p.pago_fijo) return Number(p.pago_fijo)
+  return pagoCalculado(p)
+}
+
+export interface FilaAmort { n: number; fecha: string; saldoInicial: number; pago: number; interes: number; iva: number; capital: number; saldo: number }
+
+export function tablaAmortizacion(p: PrestamoCalc): FilaAmort[] {
+  const pago = pagoFijo(p)
+  const { saldo: s0, previos, restantes } = base(p)
+  if (!pago || !restantes) return []
+  let saldo = s0
+  let anterior = p.fecha_inicio
   const filas: FilaAmort[] = []
-  for (let k = 1; k <= p.plazo; k++) {
-    const interes = r2(saldo * i)
-    let capital = r2(pago - interes)
-    if (k === p.plazo || capital > saldo) capital = r2(saldo)
+  for (let k = 1; k <= restantes && saldo > 0; k++) {
+    const fecha = sumarPeriodos(p.fecha_inicio, p.frecuencia, k)
+    const interes = interesPeriodo(p, saldo, anterior, fecha)
+    const iva = p.iva_interes ? r2(interes * IVA) : 0
+    let capital = r2(pago - interes - iva)
+    if (k === restantes || capital > saldo) capital = r2(saldo)
+    filas.push({ n: previos + k, fecha, saldoInicial: saldo, pago: r2(capital + interes + iva), interes, iva, capital, saldo: r2(saldo - capital) })
     saldo = r2(saldo - capital)
-    filas.push({ n: k, fecha: sumarPeriodos(p.fecha_inicio, p.frecuencia, k), pago: r2(capital + interes), interes, capital, saldo })
+    anterior = fecha
   }
   return filas
 }
 
 export interface EstadoPrestamo {
-  saldo: number; pagado: number; intereses: number; capitalPagado: number
-  abonos: number; pago: number | null; proximaFecha: string | null; progreso: number
+  saldo: number; pagado: number; intereses: number; iva: number; capitalPagado: number
+  abonos: number; pagosHechos: number; pago: number | null; proximaFecha: string | null; progreso: number
+  interesesRestantes: number; totalRestante: number
 }
 
+/** Cada abono se aplica al siguiente periodo de la tabla: primero interés e IVA, el resto a capital */
 export function estadoPrestamo(p: Prestamo, abonos: Abono[]): EstadoPrestamo {
   const lista = abonos.filter((a) => a.prestamo_id === p.id).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.created_at.localeCompare(b.created_at))
-  const i = tasaPeriodo(p)
-  let saldo = Number(p.monto), intereses = 0
-  for (const a of lista) {
-    const interes = r2(saldo * i)
-    const capital = Math.min(saldo, r2(Number(a.monto) - interes))
-    intereses = r2(intereses + Math.min(interes, Number(a.monto)))
-    saldo = r2(Math.max(0, saldo - Math.max(0, capital)))
-  }
+  const { saldo: s0, previos } = base(p)
+  let saldo = s0, intereses = 0, ivaTot = 0
+  let anterior = p.fecha_inicio
+  lista.forEach((a, idx) => {
+    const fecha = p.plazo ? sumarPeriodos(p.fecha_inicio, p.frecuencia, idx + 1) : a.fecha
+    const interes = interesPeriodo(p, saldo, anterior, fecha)
+    const iva = p.iva_interes ? r2(interes * IVA) : 0
+    const cargo = Math.min(Number(a.monto), r2(interes + iva))
+    const parteInteres = interes + iva > 0 ? r2((cargo * interes) / (interes + iva)) : 0
+    intereses = r2(intereses + parteInteres)
+    ivaTot = r2(ivaTot + r2(cargo - parteInteres))
+    saldo = r2(Math.max(0, saldo - Math.max(0, r2(Number(a.monto) - interes - iva))))
+    anterior = fecha
+  })
   const pagado = sum(lista.map((a) => a.monto))
   const capitalPagado = r2(Number(p.monto) - saldo)
+  const pago = pagoFijo(p)
+  // Lo que falta: proyecta la tabla desde el saldo actual
+  let interesesRestantes = 0, totalRestante = saldo
+  if (p.plazo && saldo > 0) {
+    const resto = tablaAmortizacion({ ...p, saldo_inicial: saldo, pagos_previos: previos + lista.length, monto: p.monto, fecha_inicio: anterior, plazo: p.plazo })
+    interesesRestantes = r2(sum(resto.map((f) => f.interes + f.iva)))
+    totalRestante = r2(sum(resto.map((f) => f.pago)))
+  }
   return {
-    saldo, pagado, intereses, capitalPagado, abonos: lista.length, pago: pagoFijo(p),
+    saldo, pagado, intereses, iva: ivaTot, capitalPagado, abonos: lista.length, pagosHechos: previos + lista.length, pago,
     proximaFecha: saldo > 0 && p.plazo ? sumarPeriodos(p.fecha_inicio, p.frecuencia, lista.length + 1) : null,
     progreso: Number(p.monto) > 0 ? Math.min(1, capitalPagado / Number(p.monto)) : 0,
+    interesesRestantes, totalRestante,
   }
 }
 

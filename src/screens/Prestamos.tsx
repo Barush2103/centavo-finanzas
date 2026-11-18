@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Trash2, Users } from 'lucide-react'
 import { useData, useMisCuentas } from '../data'
-import { direccionPara, estadoPrestamo, pagoFijo, tablaAmortizacion } from '../lib/calc'
+import { direccionPara, estadoPrestamo, pagoCalculado, tablaAmortizacion } from '../lib/calc'
 import { fechaCorta, hoy, money, parseMonto, sum } from '../lib/fmt'
 import { errorMsg, supabase } from '../lib/supabase'
 import type { Frecuencia, Prestamo } from '../lib/types'
@@ -79,16 +79,25 @@ function PrestamoForm({ open, onClose, edit }: { open: boolean; onClose: () => v
   const [cta, setCta] = useState('')
   const [k, setK] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [yaPagos, setYaPagos] = useState(false)
   const key = open ? (edit?.id ?? 'nuevo') : null
   if (key && k !== key) {
     setK(key)
-    setF(edit ?? { direccion: 'debo', tipo: 'personal', frecuencia: 'mensual', fecha_inicio: hoy(), tasa_anual: 0 })
+    setF(edit ?? { direccion: 'debo', tipo: 'personal', frecuencia: 'mensual', fecha_inicio: hoy(), tasa_anual: 0, base_dias: 'periodo', iva_interes: false, pagos_previos: 0 })
     setMonto(edit ? String(edit.monto) : ''); setCta('')
+    setYaPagos(!!edit && (edit.pagos_previos ?? 0) > 0)
   }
   if (!key && k) setK(null)
   const set = (kk: keyof Prestamo, v: unknown) => setF((p) => ({ ...p, [kk]: v }))
 
-  const pago = pagoFijo({ monto: parseMonto(monto), tasa_anual: Number(f.tasa_anual || 0), frecuencia: f.frecuencia ?? 'mensual', plazo: f.plazo ? Number(f.plazo) : null })
+  const calc = {
+    monto: parseMonto(monto), tasa_anual: Number(f.tasa_anual || 0), frecuencia: f.frecuencia ?? 'mensual', plazo: f.plazo ? Number(f.plazo) : null,
+    fecha_inicio: f.fecha_inicio ?? hoy(), iva_interes: !!f.iva_interes, base_dias: f.base_dias ?? 'periodo',
+    saldo_inicial: yaPagos && f.saldo_inicial ? parseMonto(String(f.saldo_inicial)) : null, pagos_previos: yaPagos ? Number(f.pagos_previos || 0) : 0,
+  }
+  const pago = pagoCalculado(calc)
+  const pagoBanco = f.pago_fijo ? parseMonto(String(f.pago_fijo)) : 0
+  const elegirTipo = (t: string) => setF((p) => ({ ...p, tipo: t as Prestamo['tipo'], ...(t === 'credito' && !edit ? { base_dias: '360', iva_interes: true } : {}) }))
 
   async function guardar() {
     const m = parseMonto(monto)
@@ -101,7 +110,11 @@ function PrestamoForm({ open, onClose, edit }: { open: boolean; onClose: () => v
         direccion: f.direccion, contraparte_nombre: nombre, contraparte_id: f.contraparte_id || null, tipo: f.tipo,
         monto: m, tasa_anual: Number(f.tasa_anual || 0), plazo: f.plazo ? Number(f.plazo) : null,
         frecuencia: f.frecuencia, fecha_inicio: f.fecha_inicio, nota: f.nota?.trim() || null,
+        pago_fijo: pagoBanco > 0 ? pagoBanco : null, iva_interes: !!f.iva_interes, base_dias: f.base_dias ?? 'periodo',
+        pagos_previos: calc.pagos_previos, saldo_inicial: calc.pagos_previos > 0 ? calc.saldo_inicial : null,
       }
+      if (calc.pagos_previos > 0 && !calc.saldo_inicial) throw new Error('Escribe el saldo que debes hoy (saldo insoluto)')
+      if (calc.pagos_previos > 0 && f.plazo && calc.pagos_previos >= Number(f.plazo)) throw new Error('Los pagos hechos deben ser menos que el plazo')
       if (edit) {
         const { error } = await supabase.from('centavo_prestamos').update(row).eq('id', edit.id)
         if (error) throw error
@@ -136,13 +149,45 @@ function PrestamoForm({ open, onClose, edit }: { open: boolean; onClose: () => v
       </Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Monto prestado"><Input inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" /></Field>
-        <Field label="Tipo"><Select value={f.tipo ?? 'personal'} onChange={(e) => set('tipo', e.target.value)}><option value="personal">Personal</option><option value="credito">Crédito bancario</option></Select></Field>
+        <Field label="Tipo"><Select value={f.tipo ?? 'personal'} onChange={(e) => elegirTipo(e.target.value)}><option value="personal">Personal</option><option value="credito">Crédito bancario</option></Select></Field>
         <Field label="Tasa anual %" hint="0 si no cobra intereses"><Input inputMode="decimal" value={f.tasa_anual ?? ''} onChange={(e) => set('tasa_anual', e.target.value)} placeholder="0" /></Field>
         <Field label="Número de pagos" hint="Vacío si no hay plazo"><Input type="number" inputMode="numeric" min={1} value={f.plazo ?? ''} onChange={(e) => set('plazo', e.target.value)} placeholder="Ej. 12" /></Field>
         <Field label="Frecuencia"><Select value={f.frecuencia ?? 'mensual'} onChange={(e) => set('frecuencia', e.target.value)}>{Object.entries(FREC).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>
-        <Field label="Fecha de inicio"><Input type="date" value={f.fecha_inicio ?? hoy()} onChange={(e) => set('fecha_inicio', e.target.value)} /></Field>
+        <Field label={yaPagos ? 'Fecha de tu último pago' : 'Fecha de inicio'} hint={yaPagos ? 'El siguiente vence un periodo después' : 'El primer pago vence un periodo después'}><Input type="date" value={f.fecha_inicio ?? hoy()} onChange={(e) => set('fecha_inicio', e.target.value)} /></Field>
       </div>
-      {pago && <p className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">Pago {FREC[f.frecuencia ?? 'mensual'].toLowerCase()} estimado: <b className="tabular">{money(pago)}</b>{Number(f.tasa_anual) > 0 && f.plazo ? <> · intereses totales {money(pago * Number(f.plazo) - parseMonto(monto))}</> : null}</p>}
+
+      {Number(f.tasa_anual) > 0 && (
+        <div className="mb-3 space-y-2 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
+          <Field label="Cómo calcula el interés">
+            <Select value={f.base_dias ?? 'periodo'} onChange={(e) => set('base_dias', e.target.value)}>
+              <option value="360">Por días, año de 360 (bancos en México)</option>
+              <option value="365">Por días, año de 365</option>
+              <option value="periodo">Tasa ÷ número de pagos al año</option>
+            </Select>
+          </Field>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-emerald-600" checked={!!f.iva_interes} onChange={(e) => set('iva_interes', e.target.checked)} /> Cobra IVA (16%) sobre los intereses</label>
+        </div>
+      )}
+
+      <label className="mb-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-emerald-600" checked={yaPagos} onChange={(e) => setYaPagos(e.target.checked)} /> Ya llevo pagos hechos</label>
+      {yaPagos && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Pagos ya hechos"><Input type="number" inputMode="numeric" min={1} value={f.pagos_previos || ''} onChange={(e) => set('pagos_previos', e.target.value)} placeholder="Ej. 1" /></Field>
+          <Field label="Saldo que debes hoy" hint="“Saldo insoluto” en tu tabla"><Input inputMode="decimal" value={f.saldo_inicial ?? ''} onChange={(e) => set('saldo_inicial', e.target.value)} placeholder="0.00" /></Field>
+        </div>
+      )}
+
+      {f.plazo && Number(f.tasa_anual) >= 0 && (
+        <Field label="Pago que te cobra el banco (opcional)" hint="Ponlo tal cual tu tabla para que todo cuadre exacto. Si lo dejas vacío, lo calculo.">
+          <Input inputMode="decimal" value={f.pago_fijo ?? ''} onChange={(e) => set('pago_fijo', e.target.value)} placeholder={pago ? String(pago) : '0.00'} />
+        </Field>
+      )}
+      {pago && (
+        <p className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
+          Pago {FREC[f.frecuencia ?? 'mensual'].toLowerCase()} calculado: <b className="tabular">{money(pago)}</b>{f.iva_interes ? ' (con IVA)' : ''}
+          {pagoBanco > 0 && Math.abs(pagoBanco - pago) > 0.5 && <><br /><span className={Math.abs(pagoBanco - pago) / pago > 0.02 ? 'text-amber-600' : 'text-slate-500'}>Tu banco cobra {money(pagoBanco)} ({pagoBanco > pago ? '+' : ''}{money(pagoBanco - pago)}). {Math.abs(pagoBanco - pago) / pago > 0.02 ? 'Revisa tasa, IVA o cómo calcula el interés.' : 'Diferencia normal por redondeos; uso el de tu banco.'}</span></>}
+        </p>
+      )}
       <Field label="Nota (opcional)"><Input value={f.nota ?? ''} onChange={(e) => set('nota', e.target.value)} /></Field>
       {!edit && (
         <Field label={f.direccion === 'debo' ? '¿En qué cuenta te cayó el dinero?' : '¿De qué cuenta salió el dinero?'} hint="Opcional. Mueve el saldo de esa cuenta sin contarlo como gasto o ingreso.">
@@ -231,9 +276,10 @@ function Detalle({ p, onClose }: { p: Prestamo | null; onClose: () => void }) {
           <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
             <div><p className="text-xs text-slate-500">Prestado</p><p className="tabular font-semibold">{money(p.monto)}</p></div>
             <div><p className="text-xs text-slate-500">Abonado</p><p className="tabular font-semibold">{money(e.pagado)}</p></div>
-            <div><p className="text-xs text-slate-500">Intereses</p><p className="tabular font-semibold">{money(e.intereses)}</p></div>
+            <div><p className="text-xs text-slate-500">Intereses{p.iva_interes ? ' + IVA' : ''}</p><p className="tabular font-semibold">{money(e.intereses + e.iva)}</p></div>
           </div>
-          {e.proximaFecha && <p className="mt-2 text-sm">Siguiente pago: <b>{fechaCorta(e.proximaFecha)}</b>{e.pago ? <> · <b className="tabular">{money(e.pago)}</b></> : null} ({e.abonos}/{p.plazo} pagos)</p>}
+          {e.totalRestante > e.saldo && <p className="mt-2 text-xs text-slate-500">Si sigues la tabla, todavía pagarás <b className="tabular">{money(e.totalRestante)}</b>: {money(e.saldo)} de capital y {money(e.interesesRestantes)} de intereses{p.iva_interes ? ' e IVA' : ''}.</p>}
+          {e.proximaFecha && <p className="mt-2 text-sm">Siguiente pago: <b>{fechaCorta(e.proximaFecha)}</b>{e.pago ? <> · <b className="tabular">{money(e.pago)}</b></> : null} ({e.pagosHechos}/{p.plazo} pagos)</p>}
           {!soyDueño && <p className="mt-2 text-xs text-slate-500">Registrado por {nombreDe(p.user_id)}. Ambos pueden anotar abonos.</p>}
         </div>
 
@@ -272,10 +318,10 @@ function Detalle({ p, onClose }: { p: Prestamo | null; onClose: () => void }) {
             {tabla && (
               <div className="mt-2 overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
                 <table className="tabular w-full text-xs">
-                  <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800"><tr><th className="p-2 text-left">#</th><th className="p-2 text-left">Fecha</th><th className="p-2 text-right">Pago</th><th className="p-2 text-right">Interés</th><th className="p-2 text-right">Capital</th><th className="p-2 text-right">Saldo</th></tr></thead>
+                  <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800"><tr><th className="p-2 text-left">#</th><th className="p-2 text-left">Fecha</th><th className="p-2 text-right">Pago</th><th className="p-2 text-right">Capital</th><th className="p-2 text-right">Interés</th>{p.iva_interes && <th className="p-2 text-right">IVA</th>}<th className="p-2 text-right">Saldo</th></tr></thead>
                   <tbody>{filas.map((r) => (
-                    <tr key={r.n} className={cx('border-t border-slate-100 dark:border-slate-800', r.n <= e.abonos && 'text-slate-400 line-through')}>
-                      <td className="p-2">{r.n}</td><td className="p-2">{fechaCorta(r.fecha)}</td><td className="p-2 text-right">{money(r.pago)}</td><td className="p-2 text-right">{money(r.interes)}</td><td className="p-2 text-right">{money(r.capital)}</td><td className="p-2 text-right">{money(r.saldo)}</td>
+                    <tr key={r.n} className={cx('border-t border-slate-100 dark:border-slate-800', r.n <= e.pagosHechos && 'text-slate-400 line-through')}>
+                      <td className="p-2">{r.n}</td><td className="p-2">{fechaCorta(r.fecha)}</td><td className="p-2 text-right">{money(r.pago)}</td><td className="p-2 text-right">{money(r.capital)}</td><td className="p-2 text-right">{money(r.interes)}</td>{p.iva_interes && <td className="p-2 text-right">{money(r.iva)}</td>}<td className="p-2 text-right">{money(r.saldo)}</td>
                     </tr>
                   ))}</tbody>
                 </table>
