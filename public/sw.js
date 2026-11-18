@@ -1,5 +1,5 @@
 // Service worker mínimo: deja la app instalable y abre sin red el "cascarón".
-const CACHE = 'centavo-v1';
+const CACHE = 'centavo-v2';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/index.html', '/icon.svg'])));
   self.skipWaiting();

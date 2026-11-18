@@ -16,6 +16,7 @@ import MovForm from './screens/MovForm'
 import type { Preset } from './screens/MovForm'
 import Movimientos from './screens/Movimientos'
 import Presupuesto from './screens/Presupuesto'
+import QuickGasto from './screens/QuickGasto'
 import Prestamos from './screens/Prestamos'
 import Tarjetas from './screens/Tarjetas'
 import { Btn, cx, Field, Input, Sheet, Toaster, toast } from './ui'
@@ -54,15 +55,20 @@ function Shell() {
   const { cargando, error, recargar } = useData()
   const [tab, setTab] = useState<Tab>(leerHash)
   const [form, setForm] = useState<{ edit?: Movimiento; preset?: Preset } | null>(null)
+  const [rapido, setRapido] = useState(() => window.location.hash === '#gasto')
 
   useEffect(() => {
-    const f = () => setTab(leerHash())
+    const f = () => {
+      if (window.location.hash === '#gasto') { setRapido(true); history.replaceState(null, '', '#inicio'); setTab('inicio'); return }
+      setTab(leerHash())
+    }
+    if (window.location.hash === '#gasto') history.replaceState(null, '', '#inicio')
     window.addEventListener('hashchange', f)
     return () => window.removeEventListener('hashchange', f)
   }, [])
 
   const go = useCallback((t: Tab) => { window.location.hash = t; setTab(t); window.scrollTo({ top: 0 }) }, [])
-  const ctx = useMemo(() => ({ go, nuevo: (p?: Preset) => setForm({ preset: p }), editar: (m: Movimiento) => setForm({ edit: m }) }), [go])
+  const ctx = useMemo(() => ({ go, nuevo: (p?: Preset) => (p ? setForm({ preset: p }) : setRapido(true)), editar: (m: Movimiento) => setForm({ edit: m }) }), [go])
 
   const screen: Record<Tab, ReactNode> = {
     inicio: <Inicio />, movimientos: <Movimientos />, tarjetas: <Tarjetas />, presupuesto: <Presupuesto />,
@@ -117,6 +123,7 @@ function Shell() {
         </div>
       </nav>
 
+      <QuickGasto open={rapido} onClose={() => setRapido(false)} onAvanzado={(p) => { setRapido(false); setForm({ preset: p }) }} />
       <MovForm open={!!form} onClose={() => setForm(null)} edit={form?.edit} preset={form?.preset} />
     </AppContext.Provider>
   )
