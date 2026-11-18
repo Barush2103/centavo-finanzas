@@ -2,17 +2,18 @@ import { useMemo, useState } from 'react'
 import { CalendarClock, Plus } from 'lucide-react'
 import { useApp } from '../appctx'
 import { useMisCuentas, useMisMovs } from '../data'
-import { estadoTarjeta } from '../lib/calc'
+import { estadoTarjeta, msiAvance } from '../lib/calc'
 import { diasHasta, fechaCorta, money, sum } from '../lib/fmt'
 import { Bar, Btn, Card, cx, Empty, PageTitle } from '../ui'
-import MsiPrevios from './MsiPrevios'
-import type { Cuenta } from '../lib/types'
+import MsiPrevios, { MsiEditar } from './MsiPrevios'
+import type { Cuenta, Movimiento } from '../lib/types'
 
 export default function Tarjetas() {
-  const { nuevo, go } = useApp()
+  const { nuevo, go, editar } = useApp()
   const cuentas = useMisCuentas()
   const movs = useMisMovs()
   const [msiDe, setMsiDe] = useState<Cuenta | null>(null)
+  const [msiEdit, setMsiEdit] = useState<{ mov: Movimiento; cuenta: Cuenta; facturadas: number } | null>(null)
   const debito = cuentas.find((c) => c.tipo === 'debito') ?? cuentas.find((c) => c.tipo !== 'credito')
 
   const tarjetas = useMemo(() => cuentas.filter((c) => c.tipo === 'credito').map((c) => ({ c, e: estadoTarjeta(c, movs) }))
@@ -94,25 +95,23 @@ export default function Tarjetas() {
 
                 {e.msi.length > 0 && (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Meses sin intereses</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Meses sin intereses · toca para editar</p>
                     <div className="space-y-2">
                       {e.msi.map((x) => {
-                        const tot = Number((x.mov.nota ?? '').match(/\((\d+) meses\)$/)?.[1] ?? 0)
-                        const de = x.mov.es_saldo_inicial && tot >= x.mov.msi_meses! ? tot : x.mov.msi_meses!
-                        const van = de - x.mov.msi_meses! + x.facturadas
-                        const nombre = (x.mov.nota || 'Compra').replace(/ \(\d+ meses\)$/, '')
+                        const a = msiAvance(x.mov, x.facturadas)
                         return (
-                        <div key={x.mov.id}>
-                          <div className="flex items-baseline justify-between gap-2 text-sm">
-                            <span className="min-w-0 truncate font-medium">{nombre}</span>
-                            <span className="tabular shrink-0 text-xs text-slate-500">{van} de {de}</span>
-                          </div>
-                          <div className="flex justify-between text-xs text-slate-500">
-                            <span className="tabular">{money(x.mensualidad)} al mes</span>
-                            <span className="tabular">faltan {money(x.restante)}</span>
-                          </div>
-                          <Bar value={van / de} tone="sky" />
-                        </div>
+                          <button key={x.mov.id} onClick={() => (x.mov.es_saldo_inicial ? setMsiEdit({ mov: x.mov, cuenta: c, facturadas: x.facturadas }) : editar(x.mov))}
+                            className="block w-full rounded-xl px-1 py-1 text-left transition hover:bg-slate-50 active:bg-slate-100 dark:hover:bg-slate-800/60">
+                            <div className="flex items-baseline justify-between gap-2 text-sm">
+                              <span className="min-w-0 truncate font-medium">{x.mov.nota || 'Compra a meses'}</span>
+                              <span className="tabular shrink-0 text-xs font-semibold text-sky-700 dark:text-sky-300">Pago {a.proximo} de {a.de}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-slate-500">
+                              <span className="tabular">{money(x.mensualidad)} al mes</span>
+                              <span className="tabular">te falta {money(x.restante)}</span>
+                            </div>
+                            <Bar value={a.pagadas / a.de} tone="sky" />
+                          </button>
                         )
                       })}
                     </div>
@@ -133,6 +132,7 @@ export default function Tarjetas() {
         })}
       </div>
       <MsiPrevios cuenta={msiDe} onClose={() => setMsiDe(null)} />
+      <MsiEditar item={msiEdit} onClose={() => setMsiEdit(null)} />
       <p className="mt-4 text-xs text-slate-500">El cálculo usa tus movimientos registrados: saldo al corte (con solo la mensualidad de cada compra a MSI) menos lo que has pagado después del corte. No incluye intereses ni comisiones del banco; compáralo con tu estado de cuenta.</p>
     </div>
   )

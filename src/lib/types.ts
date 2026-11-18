@@ -22,7 +22,7 @@ export interface Movimiento {
   cuenta_id: string; cuenta_destino_id: string | null; categoria_id: string | null
   nota: string | null; msi_meses: number | null
   prestamo_id: string | null; abono_id: string | null; compartido_id: string | null
-  es_saldo_inicial: boolean
+  es_saldo_inicial: boolean; msi_total: number | null
   created_at: string
 }
 

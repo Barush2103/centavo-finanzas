@@ -49,6 +49,14 @@ export function msiFacturadas(fechaCompra: string, meses: number, diaCorte: numb
   return Math.max(0, Math.min(meses, n))
 }
 
+/** Avance de una compra a meses: plazo total, mensualidades ya cobradas y número del próximo pago */
+export function msiAvance(m: Movimiento, facturadas: number) {
+  const restantesAlta = m.msi_meses ?? 1
+  const de = m.msi_total && m.msi_total >= restantesAlta ? m.msi_total : restantesAlta
+  const pagadas = de - restantesAlta + facturadas
+  return { de, pagadas, proximo: Math.min(de, pagadas + 1) }
+}
+
 export interface EstadoTarjeta {
   deuda: number                 // todo lo que debes hoy (incluye MSI futuros)
   disponible: number | null

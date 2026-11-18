@@ -380,3 +380,5 @@ alter table public.centavo_cuentas
 alter table public.centavo_movimientos add column if not exists es_saldo_inicial boolean not null default false;
 -- msi_meses ahora acepta 1 (última mensualidad pendiente)
 -- alter table public.centavo_movimientos add constraint centavo_movimientos_msi_meses_check check (msi_meses is null or msi_meses between 1 and 48);
+-- Plazo original de compras a meses
+alter table public.centavo_movimientos add column if not exists msi_total smallint check (msi_total is null or msi_total between 1 and 48);
