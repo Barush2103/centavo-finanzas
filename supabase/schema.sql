@@ -371,3 +371,7 @@ alter table public.centavo_prestamos
   add column if not exists base_dias text not null default 'periodo' check (base_dias in ('periodo','360','365')),
   add column if not exists saldo_inicial numeric(14,2) check (saldo_inicial is null or saldo_inicial >= 0),
   add column if not exists pagos_previos int not null default 0 check (pagos_previos >= 0);
+
+-- Tarjetas: parte de la deuda inicial que pertenece al último estado de cuenta (el resto se factura en el siguiente corte)
+alter table public.centavo_cuentas
+  add column if not exists pendiente_inicial numeric(14,2) not null default 0 check (pendiente_inicial >= 0);

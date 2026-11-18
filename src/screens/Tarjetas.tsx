@@ -73,6 +73,13 @@ export default function Tarjetas() {
                   </div>
                 ) : <p className="text-sm text-amber-600">Configura día de corte y de pago en Cuentas para calcular tu pago.</p>}
 
+                {e.proximoLimite && (e.proximoPago > 0 || e.pagoNoIntereses === 0) && (
+                  <div className="flex items-center justify-between rounded-2xl border border-dashed border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                    <div><p className="font-medium">Siguiente pago</p><p className="text-xs text-slate-500">Corte {fechaCorta(e.proximoCorte!)} · límite {fechaCorta(e.proximoLimite)} · se va sumando</p></div>
+                    <p className="tabular text-lg font-bold">{money(e.proximoPago)}</p>
+                  </div>
+                )}
+
                 {e.corte && (
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     <Linea l={`Saldo al corte (${fechaCorta(e.corte)})`} v={e.facturado} />

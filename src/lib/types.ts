@@ -9,6 +9,7 @@ export interface Cuenta {
   saldo_inicial: number; limite_credito: number | null
   dia_corte: number | null; dia_pago: number | null
   color: string; archivada: boolean; orden: number
+  pendiente_inicial: number; created_at: string
 }
 
 export interface Categoria {

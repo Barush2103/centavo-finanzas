@@ -30,6 +30,7 @@ export default function Inicio() {
     const gastos = sum(delMes.filter((m) => m.tipo === 'gasto').map(ms))
     const patrimonio = sum([liquidez, inversiones, -deudaTarjetas, meDeben, -debo, netoComp])
     const pagos = tarjetas.filter((t) => t.e.pagoNoIntereses > 0 && t.e.limite).sort((a, b) => a.e.limite!.localeCompare(b.e.limite!))
+    const proximos = tarjetas.filter((t) => t.e.pagoNoIntereses === 0 && t.e.proximoPago > 0 && t.e.proximoLimite).sort((a, b) => a.e.proximoLimite!.localeCompare(b.e.proximoLimite!))
     const pres = presupuestos.filter((p) => p.user_id === uid && Number(p.monto) > 0).map((p) => {
       const gastado = sum(delMes.filter((m) => m.tipo === 'gasto' && m.categoria_id === p.categoria_id).map(ms))
       return { p, gastado, pct: gastado / Number(p.monto) }
@@ -37,7 +38,7 @@ export default function Inicio() {
     const presTotal = sum(presupuestos.filter((p) => p.user_id === uid).map((p) => p.monto))
     const presGastado = sum(delMes.filter((m) => m.tipo === 'gasto' && presupuestos.some((p) => p.user_id === uid && p.categoria_id === m.categoria_id)).map(ms))
     const proxPrest = prest.filter((x) => x.e.proximaFecha).sort((a, b) => a.e.proximaFecha!.localeCompare(b.e.proximaFecha!)).slice(0, 3)
-    return { liquidez, inversiones, deudaTarjetas, meDeben, debo, ingresos, gastos, patrimonio, pagos, pres, presTotal, presGastado, proxPrest }
+    return { proximos, liquidez, inversiones, deudaTarjetas, meDeben, debo, ingresos, gastos, patrimonio, pagos, pres, presTotal, presGastado, proxPrest }
   }, [cuentas, movs, prestamos, abonos, uid, presupuestos, mes, ms, netoComp])
 
   const recientes = [...movs].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.created_at.localeCompare(a.created_at)).slice(0, 6)
@@ -89,9 +90,8 @@ export default function Inicio() {
             <p className="flex items-center gap-2 font-semibold"><CreditCard size={18} /> Pagos de tarjeta</p>
             <ChevronRight size={18} className="text-slate-400" />
           </div>
-          {r.pagos.length === 0 ? (
-            <p className="py-2 text-sm text-slate-500">Nada pendiente para no generar intereses.</p>
-          ) : r.pagos.map(({ c, e }) => {
+          {r.pagos.length === 0 && r.proximos.length === 0 && <p className="py-2 text-sm text-slate-500">Nada pendiente para no generar intereses.</p>}
+          {r.pagos.map(({ c, e }) => {
             const d = diasHasta(e.limite!)
             return (
               <div key={c.id} className="flex items-center justify-between border-t border-slate-100 py-2 first:border-0 dark:border-slate-800">
@@ -108,6 +108,18 @@ export default function Inicio() {
               </div>
             )
           })}
+          {r.proximos.map(({ c, e }) => (
+            <div key={c.id} className="flex items-center justify-between border-t border-slate-100 py-2 first:border-0 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full" style={{ background: c.color }} />
+                <div>
+                  <p className="font-medium">{c.nombre} <span className="text-xs font-normal text-emerald-600">✓ al corriente</span></p>
+                  <p className="text-xs text-slate-500">Llevas para el {fechaCorta(e.proximoLimite!)} · corte {fechaCorta(e.proximoCorte!)}</p>
+                </div>
+              </div>
+              <p className="tabular font-medium text-slate-500">{money(e.proximoPago)}</p>
+            </div>
+          ))}
         </Card>
 
         <Card onClick={() => go('presupuesto')}>

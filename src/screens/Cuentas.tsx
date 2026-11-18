@@ -89,6 +89,7 @@ function CuentaForm({ cuenta, onClose }: { cuenta: Partial<Cuenta> | null; onClo
       const row = {
         nombre: f.nombre.trim(), tipo: f.tipo, color: f.color, saldo_inicial,
         limite_credito: credito && f.limite_credito ? Number(f.limite_credito) : null,
+        pendiente_inicial: credito ? Math.min(parseMonto(String(f.pendiente_inicial ?? '0')), Math.max(0, -objetivo)) : 0,
         dia_corte: credito ? Number(f.dia_corte) : null, dia_pago: credito ? Number(f.dia_pago) : null,
         archivada: !!f.archivada,
         orden: f.orden ?? cuentas.filter((c) => c.user_id === uid).length,
@@ -130,6 +131,9 @@ function CuentaForm({ cuenta, onClose }: { cuenta: Partial<Cuenta> | null; onClo
             <Field label="Día de corte"><Input type="number" min={1} max={31} inputMode="numeric" value={f.dia_corte ?? ''} onChange={(e) => set('dia_corte', e.target.value)} placeholder="Ej. 25" /></Field>
             <Field label="Día límite de pago"><Input type="number" min={1} max={31} inputMode="numeric" value={f.dia_pago ?? ''} onChange={(e) => set('dia_pago', e.target.value)} placeholder="Ej. 15" /></Field>
           </div>
+          <Field label="¿Cuánto te falta pagar de tu último estado de cuenta?" hint="Si ya lo pagaste, deja 0. El resto de tu deuda se cobra en tu próximo corte.">
+            <Input inputMode="decimal" value={f.pendiente_inicial ?? ''} onChange={(e) => set('pendiente_inicial', e.target.value)} placeholder="0.00" />
+          </Field>
         </>
       )}
       <Field label="Color">

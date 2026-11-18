@@ -62,6 +62,8 @@ export interface EstadoTarjeta {
   msiPendiente: number          // capital de MSI aún no facturado
   msi: { mov: Movimiento; mensualidad: number; facturadas: number; restante: number }[]
   vencido: boolean
+  proximoPago: number           // lo que llevas para el siguiente estado (compras nuevas + mensualidades MSI)
+  proximoLimite: string | null  // fecha límite del siguiente estado
 }
 
 export function estadoTarjeta(c: Cuenta, movs: Movimiento[]): EstadoTarjeta {
@@ -75,16 +77,26 @@ export function estadoTarjeta(c: Cuenta, movs: Movimiento[]): EstadoTarjeta {
     return {
       deuda, disponible, corte: null, limite: null, proximoCorte: null, facturado: deuda,
       pagadoDesdeCorte: 0, pagoNoIntereses: deuda, cargosPeriodo: 0, msiPendiente: 0, msi: [], vencido: false,
+      proximoPago: 0, proximoLimite: null,
     }
   }
   const corte = ultimoCorte(c.dia_corte)
   const corteS = iso(corte)
   const limite = fechaLimite(corte, c.dia_corte, c.dia_pago)
 
-  // Saldo al corte: todo lo <= corte, pero cada MSI solo aporta las mensualidades ya facturadas
-  let saldoCorte = Number(c.saldo_inicial)
+  // Deuda capturada al dar de alta la tarjeta: lo pendiente del último estado ya está facturado;
+  // el resto se trata como cargo del día de alta y se factura en el siguiente corte.
+  const pendienteIni = Math.max(0, Number(c.pendiente_inicial ?? 0))
+  const alta = c.created_at ? iso(new Date(c.created_at)) : '0000-00-00'
+  const restoIni = Number(c.saldo_inicial) + pendienteIni // negativo = cargo
+  let saldoCorte = -pendienteIni
   let pagadoDesde = 0
   let cargosPeriodo = 0
+  if (alta <= corteS) saldoCorte += restoIni
+  else if (restoIni < 0) cargosPeriodo += -restoIni
+  else pagadoDesde += restoIni
+
+  // Saldo al corte: todo lo <= corte, pero cada MSI solo aporta las mensualidades ya facturadas
   for (const m of propios) {
     const e = efecto(m, c.id)
     if (m.fecha <= corteS) {
@@ -108,8 +120,13 @@ export function estadoTarjeta(c: Cuenta, movs: Movimiento[]): EstadoTarjeta {
     return { mov: m, mensualidad, facturadas: k, restante: r2(Number(m.monto) - mensualidad * k) }
   }).filter((x) => x.facturadas < x.mov.msi_meses!)
   const msiPendiente = sum(msi.map((x) => x.restante))
+  const msiProx = sum(msi.map((x) => x.mensualidad))
+  const sobrante = Math.max(0, pagadoDesde - facturado)
+  const proximoPago = r2(Math.max(0, cargosPeriodo + msiProx - sobrante))
+  const sig = siguienteCorte(c.dia_corte)
 
   return {
+    proximoPago, proximoLimite: iso(fechaLimite(sig, c.dia_corte, c.dia_pago)),
     deuda, disponible, corte: corteS, limite: iso(limite), proximoCorte: iso(siguienteCorte(c.dia_corte)),
     facturado, pagadoDesdeCorte: pagadoDesde, pagoNoIntereses, cargosPeriodo: r2(cargosPeriodo),
     msiPendiente, msi, vencido: pagoNoIntereses > 0 && iso(limite) < hoy(),
